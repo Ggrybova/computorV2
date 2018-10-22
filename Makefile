@@ -3,7 +3,7 @@ ERLC ?= erlc
 all: compile
 
 compile:
-	$(ERLC) computor.erl
+	$(ERLC) src/computor.erl
 
 re: clean compile
 
