@@ -1,7 +1,7 @@
 #! /usr/bin/env escript
 
-main([Arg]) ->
-    computor:main(Arg);
+main([]) ->
+    computor:main();
 
 main(_) ->
-    io:format("usage:   .\/computor \"the equation\"~n").
+    io:format("usage:   .\/computor~n").

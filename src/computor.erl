@@ -13,17 +13,30 @@
 %% API
 %%====================================================================
 -export([
-    main/1
+    main/0
 ]).
 
-main(String) ->
-	case arg_to_binary(String) of
-		error -> io:format("Error. Not valid input.~n");
-		Bin ->
-			io:format("Input: ~p~n", [Bin]),
-			PropList = parse_expression(Bin),
-			io:format("PropList: ~p~n", [PropList])
+main() ->
+	go().
+%%	case arg_to_binary(String) of
+%%		error -> io:format("Error. Not valid input.~n");
+%%		Bin ->
+%%			io:format("Input: ~p~n", [Bin]),
+%%			PropList = parse_expression(Bin),
+%%			io:format("PropList: ~p~n", [PropList])
+%%	end.
+
+go() ->
+	Arg = io:parse_erl_exprs('>'),
+	case Arg of
+		{ok,[{atom,1,q}],3} -> ok;
+		_ ->
+			io:format("Arg: ~p~n", [Arg]),
+			go()
 	end.
+%%	parse_expression(Arg),
+%%	exec(Arg).
+
 
 %%====================================================================
 %% Internal functions
@@ -41,6 +54,24 @@ parse_expression(Input) ->
 			io:format("Name: ~p~nExpression: ~p~n", [Name, Expr]);
 		E -> {error, E}
 	end.
+
+%%validate_expression(Name, Expr) ->
+%%	case get_type(Expr) of
+%%		var ->
+%%			io:format("Type = ~p~n", [var]);
+%%		compl ->
+%%			io:format("Type = ~p~n", [compl]);
+%%		matr ->
+%%			io:format("Type = ~p~n", [matr]);
+%%		func ->
+%%			io:format("Type = ~p~n", [func]);
+%%		E ->
+%%			io:format("Type = ~p~n", [E])
+%%	end.
+%%
+%%get_type(Expr) ->
+%%	try
+%%		X =
 
 
 %% Proplist = [
