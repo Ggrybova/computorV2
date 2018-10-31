@@ -22,25 +22,59 @@ main() ->
 %%		error -> io:format("Error. Not valid input.~n");
 %%		Bin ->
 %%			io:format("Input: ~p~n", [Bin]),
-%%			PropList = parse_expression(Bin),
+%%			PropList = parse_expression(Bin) ,
 %%			io:format("PropList: ~p~n", [PropList])
 %%	end.
 
 go() ->
-	Arg = io:parse_erl_exprs('>'),
-	case Arg of
-		{ok,[{atom,1,q}],3} -> ok;
+	Arg0 = io:get_line("> "),
+	case Arg0 of
+		"q\n" -> ok;
 		_ ->
-			io:format("Arg: ~p~n", [Arg]),
+            Arg =
+                case lists:member($%, Arg0) of
+                    true ->
+                        ArgBin0 = list_to_binary(Arg0),
+                        ArgBin = binary:replace(ArgBin0, <<"%">>, <<" rem ">>),
+                        binary_to_list(ArgBin);
+                    _ ->
+                        Arg0
+                end,
+            io:format("Arg: ~p~n", [Arg]),
+			case erl_scan:string(Arg) of
+				{ok, Token, N} ->
+					io:format("~p~n", [Token]),
+                    execute_token(Token);
+				{error, R} ->
+					io:format("Error format: ~p~n", [R])
+			end,
 			go()
 	end.
 %%	parse_expression(Arg),
 %%	exec(Arg).
 
+%%io:get_line("> ").
+%%io:parse_erl_exprs('>')
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+execute_token(Token) ->
+    X = get_type(Token),
+    case X of
+        {variable, Name, Expr}  -> io:format("~p~n", [X]);
+        {complex, Name, Expr}   -> io:format("~p~n", [X]);
+        {matrice, Name, Expr}   -> io:format("~p~n", [X]);
+        {function, Name, Expr}  -> io:format("~p~n", [X]);
+        _ -> io:format("ERROR Type~n")
+    end.
+
+get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]]) -> {function, {Name, Var}, Expr};
+get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]]) -> {matrice, Name, Expr};
+get_type([{atom,1,Name} | [{'=',1} | Expr]]) -> {variable, Name, Expr};
+get_type(_) -> ok.
+
 
 arg_to_binary(Arg) ->
 	try list_to_binary(Arg)
@@ -74,6 +108,8 @@ parse_expression(Input) ->
 %%		X =
 
 
+%% Map = {var1, prplist1
+%%
 %% Proplist = [
 %%				{type, variable | complex | matrice | function},
 %%				{name, Name},
