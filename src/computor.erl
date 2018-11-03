@@ -42,9 +42,9 @@ go() ->
                 end,
             io:format("Arg: ~p~n", [Arg]),
 			case erl_scan:string(Arg) of
-				{ok, Token, N} ->
-					io:format("~p~n", [Token]),
-                    execute_token(Token);
+				{ok, Tokens, N} ->
+%%					io:format("Token: ~p~n", [Token]),
+                    execute_token(Tokens);
 				{error, R} ->
 					io:format("Error format: ~p~n", [R])
 			end,
@@ -55,6 +55,11 @@ go() ->
 
 %%io:get_line("> ").
 %%io:parse_erl_exprs('>')
+%%!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+%%	1.	{ok,Tokens,_EndLine} = erl_scan:string("{1,2,[hello]}."),
+%%	2.	{ok,AbsForm} = erl_parse:parse_exprs(Tokens),
+%%	3.	{value,Value,_Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
+%%Value.
 
 %%====================================================================
 %% Internal functions
@@ -63,17 +68,46 @@ go() ->
 execute_token(Token) ->
     X = get_type(Token),
     case X of
-        {variable, Name, Expr}  -> io:format("~p~n", [X]);
-        {complex, Name, Expr}   -> io:format("~p~n", [X]);
-        {matrice, Name, Expr}   -> io:format("~p~n", [X]);
-        {function, Name, Expr}  -> io:format("~p~n", [X]);
-        _ -> io:format("ERROR Type~n")
+        {variable,	Name, Expr} = Res -> io:format("!!!	Res = ~p~n", [Res]);
+        {complex,	Name, Expr} = Res -> io:format("!!!	Res = ~p~n", [Res]);
+		{complex2,	Name, Expr} = Res -> io:format("!!!	Res = ~p~n", [Res]);
+		{reassign1,	Name, Expr} = Res -> io:format("!!!	Res = ~p~n", [Res]);
+		{reassign2,	Name, Expr} = Res -> io:format("!!!	Res = ~p~n", [Res]);
+        {matrice,	Name, Expr} = Res -> io:format("!!!	Res = ~p~n", [Res]);
+        {function,	Name, Expr} = Res -> io:format("!!!	Res = ~p~n", [Res]);
+        Res -> io:format("ERROR Type: ~p~n", [Res])
     end.
 
 get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]]) -> {function, {Name, Var}, Expr};
 get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]]) -> {matrice, Name, Expr};
-get_type([{atom,1,Name} | [{'=',1} | Expr]]) -> {variable, Name, Expr};
-get_type(_) -> ok.
+get_type([{atom,1,Name} | [{'=',1} | Expr]]) ->
+	Tokens = Expr ++ [{dot, 1}],
+	io:format("Token: ~p~n", [Tokens]),
+	try
+
+		{ok, AbsForm} = erl_parse:parse_exprs(Tokens),
+		io:format("AbsForm: ~p~n", [AbsForm]),
+			try
+				{value,Value,_Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
+				{variable, Name, Value}
+			catch
+			    _:_  ->
+					case lists:keyfind(atom, 1, Tokens) of
+						{atom,1,i} -> {complex1, Name, AbsForm};
+						{atom,1,_} -> {reassign1, Name, AbsForm};
+						_ -> {expression1, Name, AbsForm}
+					end
+			end
+	catch
+		_:_ ->
+			case lists:keyfind(atom, 1, Tokens) of
+				{atom, 1, i} -> {complex2, Name, Tokens};
+				{atom, 1, _} -> {reassign2, Name, Tokens};
+				_ -> {expression2, Name, Tokens}
+			end
+	end;
+
+get_type(X) -> X.
 
 
 arg_to_binary(Arg) ->
