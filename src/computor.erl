@@ -29,7 +29,7 @@ go(Map) ->
 				case lists:member($%, Arg0) of
 					true ->
 						ArgBin0 = list_to_binary(Arg0),
-						ArgBin = binary:replace(ArgBin0, <<"%">>, <<" rem ">>),
+						ArgBin = binary:replace(ArgBin0, <<"%">>, <<" rem ">>, [global]),
 						binary_to_list(ArgBin);
 					_ ->
 						Arg0
@@ -138,7 +138,11 @@ execute_token(Token, _) ->
         Res -> io:format("ERROR Type: ~p~n", [Res])
     end.
 
-get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], _Map) -> {function, {Name, Var}, Expr};
+get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], Map) ->
+    Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
+    Tokens1 = reassign_tokens(Tokens0, Map),
+    io:format("Tokens1: ~p~n", [Tokens1]),
+    {function, {Name, Var}, Expr};
 
 get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]], Map) ->
 	Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
