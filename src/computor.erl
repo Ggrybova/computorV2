@@ -142,7 +142,16 @@ get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
     Tokens1 = reassign_tokens(Tokens0, Map),
     io:format("Tokens1: ~p~n", [Tokens1]),
-    {function, {Name, Var}, Expr};
+	{ok,[Abs]} = erl_parse:parse_exprs(Tokens1),
+	io:format("Abs: ~p~n", [Abs]),
+	case quadratic_equations:reduse_form(Abs) of
+		{ok, Value} ->
+			io:format("Value: ~p~n", [Value]),
+			{function, {Name, Var}, Tokens1};
+		E -> E
+	end;
+%%	{value,Value,_} = erl_eval:exprs(Abs, erl_eval:new_bindings()),
+
 
 get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]], Map) ->
 	Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],

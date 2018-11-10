@@ -3,7 +3,8 @@ ERLC ?= erlc
 all: compile
 
 compile:
-	$(ERLC) src/computor.erl
+	$(ERLC) src/computor.erl src/quadratic_equations.erl src/my_lib.erl
+
 
 re: clean compile
 

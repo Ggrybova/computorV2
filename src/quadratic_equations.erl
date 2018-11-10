@@ -10,7 +10,8 @@
 -author("ggrybova").
 
 -export([
-    main/1
+    main/1,
+    reduse_form/1
 ]).
 %%====================================================================
 %% API
@@ -37,7 +38,32 @@ main(Arg0) ->
             end
     end.
 
+reduse_form({op,1,Operation, Part1, Part2}) ->
+	Reduse1 =
+	try
+		{value, Value1, _} = erl_eval:exprs([Part1], erl_eval:new_bindings()),
+		{integer,1,Value1}
+	catch
+	    _:_  ->
+			case reduse_form(Part1) of
+				{ok, Reduse11} -> Reduse11;
+				_ -> Part1
+			end
+	end,
+	Reduse2 =
+		try
+			{value, Value2, _} = erl_eval:exprs([Part2], erl_eval:new_bindings()),
+			{integer,1,Value2}
+		catch
+			_:_  ->
+				case reduse_form(Part2) of
+					{ok, Reduse22} -> Reduse22;
+					_ -> Part2
+				end
+		end,
+	{ok, [{op,1,Operation, Reduse1, Reduse2}]};
 
+reduse_form(Arg) -> io:format("Arg:~p~n", [Arg]), error.
 
 %%====================================================================
 %% Internal functions
@@ -76,14 +102,14 @@ solve_equation(#{degree := 2, a := A, b := B, c := C} = Map) ->
         D when D == 0 -> io:format("The solution:   - B / 2A = ~p~n", [-1*B/2/A]);
         D when D > 0 -> io:format("Solutions:       (-B - sq(D)) / 2A = ~p,
                          (-B + sq(D)) / 2A = ~p~n",
-            [(-1*B-my_sq(D))/A/2,(-1*B+my_sq(D))/A/2]);
+            [(-1*B-my_lib:my_sqrt(D))/A/2,(-1*B+my_lib:my_sqrt(D))/A/2]);
         D ->  io:format("What a fuck?")
     end;
 solve_equation(_) ->
     io:format("Please, enter valide polinomial.~n").
 
 complex_solve(A, B, D) ->
-    SqD = my_sq(D * -1),
+    SqD = my_lib:my_sqrt(D * -1),
     Im = SqD/2/A,
     case -1*B/2/A of
         Re when Re == 0 orelse Re == 0.0 ->
@@ -161,9 +187,10 @@ split(Arg, Sep, Acc) ->
         [Coef , Rest] ->
             case Coef of
                 <<_, "^", _, Y/binary>> ->
-                    split(Rest, Sep, [convert_to_float(Y) | Acc]);
+                    split(Rest, Sep, [my_lib:binary_to_number(Y) | Acc]);
                 Bin ->
-                    split(Rest, Sep, [convert_to_float(Bin) | Acc])
+                    split(Rest, Sep, [my_lib:binary_to_number(Bin) | Acc])
             end;
         _ -> lists:reverse(Acc)
     end.
+
