@@ -116,38 +116,48 @@ lost_multiplication({integer,1,_Int}, [{atom,1,Atom}|T], Acc) ->
 
 lost_multiplication(_, [P|T], Acc) -> lost_multiplication(P, T, [P|Acc]).
 
-execute_token({variable,Name, Expr}, _) ->
-	Proplist = [
-		{type, variable},
-		{value, Expr}
-	],
-	{Name, Proplist};
-
-execute_token({matrice,	Name, Expr}, _) ->
+execute_token({Type,Name, Expr}, _) when
+        Type == variable orelse
+        Type == matrice orelse
+        Type == function ->
     Proplist = [
-        {type, matrice},
+        {type, Type},
         {value, Expr}
     ],
     {Name, Proplist};
 
-execute_token(Token, _) ->
-    case Token of
-        {complex1,	_Name, _Expr} = Token -> io:format("!!!	Res = ~p~n", [Token]);
-		{complex2,	_Name, _Expr} = Token -> io:format("!!!	Res = ~p~n", [Token]);
-        {function,	_Name, _Expr} = Token -> io:format("!!!	Res = ~p~n", [Token]);
-        Res -> io:format("ERROR Type: ~p~n", [Res])
-    end.
+execute_token({complex,Name, [{op,1,Op, Var1, Var2}]}, _) ->
+    [Re, Im] = lists:foldl(
+        fun({integer,1,Val}, [AccRe, AccIm]) -> [AccRe + Val, AccIm];
+            ({op,1,'-',{integer,1,Val}}, [AccRe, AccIm]) -> [AccRe - Val, AccIm];
+%%            ({float,1,Val}, [AccRe, AccIm]) -> [AccRe + Val, AccIm];
+%%            ({op,1,'-',{float,1,Val}}, [AccRe, AccIm]) -> [AccRe - Val, AccIm];
+            ({op,1,Op2, Var3, Var4}, [AccRe, AccIm]) ->
+                ImVar =
+                    case Var3 of
+                        {atom, 1, i} -> Var4;
+                        _ -> Var3
+                    end,
+                {value,Value, _} = erl_eval:exprs([ImVar], erl_eval:new_bindings()),
+                [AccRe, AccIm + Value]
+        end, [0,0], [Var1, {op,1,Op,Var2}]),
+    io:format("~p   ~pi~n", [Re, Im]),
+    Proplist = [
+        {type, complex},
+        {value, {Re, Im}}
+    ],
+    {Name, Proplist}.
 
 get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
     Tokens1 = reassign_tokens(Tokens0, Map),
-    io:format("Tokens1: ~p~n", [Tokens1]),
+%%    io:format("Tokens1: ~p~n", [Tokens1]),
 	{ok,[Abs]} = erl_parse:parse_exprs(Tokens1),
-	io:format("Abs: ~p~n", [Abs]),
+%%	io:format("Abs: ~p~n", [Abs]),
 	case quadratic_equations:reduse_form(Abs) of
 		{ok, Value} ->
-			io:format("Value: ~p~n", [Value]),
-			{function, {Name, Var}, Tokens1};
+%%			io:format("Value: ~p~n", [Value]),
+			{function, {Name, Var}, Value};
 		E -> E
 	end;
 %%	{value,Value,_} = erl_eval:exprs(Abs, erl_eval:new_bindings()),
@@ -178,15 +188,15 @@ get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
 			catch
 			    _:_  ->
 					case lists:keyfind(atom, 1, Tokens) of
-						{atom,1,i} -> {complex1, Name, AbsForm};
+						{atom,1,i} -> {complex, Name, AbsForm};
 						{atom,1,_} -> {reassign1, Name, AbsForm};
 						_ -> {expression1, Name, AbsForm}
 					end
 			end
 	catch
 		_:_ ->
+            io:format("get_type!!!!!!~n"),
 			case lists:keyfind(atom, 1, Tokens) of
-				{atom, 1, i} -> {complex2, Name, Tokens};
 				{atom, 1, _} -> {reassign2, Name, Tokens};
 				_ -> {expression2, Name, Tokens}
 			end
@@ -198,7 +208,11 @@ print_variable([{type, variable},{value, Value}]) -> io:format("~p~n", [Value]);
 
 print_variable([{type, matrice},{value, Value}]) -> [io:format("~p~n", [List]) || List <- Value];
 
+print_variable([{type, function},{value, _Value}]) -> io:format("~n");
+
 print_variable(_) -> ok.
+
+
 
 %%arg_to_binary(Arg) ->
 %%	try list_to_binary(Arg)

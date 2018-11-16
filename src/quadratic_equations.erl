@@ -39,29 +39,38 @@ main(Arg0) ->
     end.
 
 reduse_form({op,1,Operation, Part1, Part2}) ->
+    io:format("("),
 	Reduse1 =
 	try
 		{value, Value1, _} = erl_eval:exprs([Part1], erl_eval:new_bindings()),
+        io:format("~p ", [Value1]),
 		{integer,1,Value1}
 	catch
 	    _:_  ->
 			case reduse_form(Part1) of
 				{ok, Reduse11} -> Reduse11;
-				_ -> Part1
+				_ ->
+                    io:format("~p ", [Part1]),
+                    Part1
 			end
 	end,
+    io:format(" ~s ", [Operation]),
 	Reduse2 =
 		try
 			{value, Value2, _} = erl_eval:exprs([Part2], erl_eval:new_bindings()),
-			{integer,1,Value2}
+            io:format(" ~p", [Value2]),
+            {integer,1,Value2}
 		catch
 			_:_  ->
 				case reduse_form(Part2) of
 					{ok, Reduse22} -> Reduse22;
-					_ -> Part2
+					_ ->
+                        io:format(" ~p", [Part2]),
+                        Part2
 				end
 		end,
-	{ok, [{op,1,Operation, Reduse1, Reduse2}]};
+	io:format(")"),
+    {ok, [{op,1,Operation, Reduse1, Reduse2}]};
 
 reduse_form(Arg) -> io:format("Arg:~p~n", [Arg]), error.
 
