@@ -85,10 +85,8 @@ reassign_tokens(Tokens, Map) ->
                 Obj ->
                     Type = proplists:get_value(type, Obj),
                     Value = proplists:get_value(value, Obj),
-%%                    io:format("     Type = ~p, Value = ~p~n", [Type, Value]),
                     case Type of
                         variable ->
-%%                            io:format("reassign+~n"),
                             if is_float(Value) -> {true, {float,1,Value}};
                                 true -> {true, {integer,1,Value}}
                             end;
@@ -97,7 +95,6 @@ reassign_tokens(Tokens, Map) ->
             end;
             (Elem) -> {true, Elem}
         end, Tokens),
-%%    io:format("     NewExpr = ~p~n", [NewExpr]),
     NewTokens.
 
 lost_multiplication([]) -> [];
@@ -109,10 +106,18 @@ lost_multiplication(Tokens) ->
 
 lost_multiplication(_, [], Acc) -> lists:reverse(Acc);
 
+lost_multiplication([], [{atom,1,Atom}|T], Acc) ->
+    lost_multiplication({atom,1,Atom}, T, [{atom,1,Atom} | [{'*',1}| [{integer,1,1} | Acc]]]);
+
 lost_multiplication([], [P|T], Acc) -> lost_multiplication(P, T, [P|Acc]);
 
-lost_multiplication({integer,1,_Int}, [{atom,1,Atom}|T], Acc) ->
+lost_multiplication({Type,1,_Int}, [{atom,1,Atom}|T], Acc) when Type == integer orelse Type == float ->
     lost_multiplication({atom,1,Atom}, T, [{atom,1,Atom} | [{'*',1}| Acc]]);
+
+lost_multiplication(_, [{atom,1,Atom}|T], Acc) ->
+    lost_multiplication({atom,1,Atom}, T, [{atom,1,Atom} | [{'*',1}| [{integer,1,1} | Acc]]]);
+
+lost_multiplication(_, [], Acc) -> lost_multiplication([], [], Acc);
 
 lost_multiplication(_, [P|T], Acc) -> lost_multiplication(P, T, [P|Acc]).
 
@@ -126,42 +131,47 @@ execute_token({Type,Name, Expr}, _) when
     ],
     {Name, Proplist};
 
-execute_token({complex,Name, [{op,1,Op, Var1, Var2}]}, _) ->
+execute_token({complex,Name,[{atom,1,i}]}, _) -> {Name, [{type, complex},{value, {0, 1}}]};
+
+execute_token({complex,Name, [{op,1,Op, Var1, Var2}] = T}, _) ->
     [Re, Im] = lists:foldl(
-        fun({integer,1,Val}, [AccRe, AccIm]) -> [AccRe + Val, AccIm];
-            ({op,1,'-',{integer,1,Val}}, [AccRe, AccIm]) -> [AccRe - Val, AccIm];
-%%            ({float,1,Val}, [AccRe, AccIm]) -> [AccRe + Val, AccIm];
-%%            ({op,1,'-',{float,1,Val}}, [AccRe, AccIm]) -> [AccRe - Val, AccIm];
-            ({op,1,Op2, Var3, Var4}, [AccRe, AccIm]) ->
-                ImVar =
-                    case Var3 of
-                        {atom, 1, i} -> Var4;
-                        _ -> Var3
-                    end,
+        fun({Type,1,Val}, [AccRe, AccIm]) when Type == integer orelse Type == float -> [AccRe + Val, AccIm];
+            ({op,1,'-',{Type,1,Val}}, [AccRe, AccIm]) when Type == integer orelse Type == float -> [AccRe - Val, AccIm];
+            ({op,1,'+',{Type,1,Val}}, [AccRe, AccIm]) when Type == integer orelse Type == float -> [AccRe + Val, AccIm];
+            ({op,1,_, Var3, Var4}, [AccRe, AccIm]) ->
+                ImVar = case Var3 of
+                            {atom, 1, i} -> Var4;
+                            _ -> Var3
+                        end,
                 {value,Value, _} = erl_eval:exprs([ImVar], erl_eval:new_bindings()),
-                [AccRe, AccIm + Value]
+                [AccRe, AccIm + Value];
+            ({op,1,'+',{op,1,'*',Var5,Var6}}, [AccRe, AccIm]) ->
+                ImVar2 = case Var5 of
+                             {atom, 1, i} -> Var6;
+                             _ -> Var5
+                         end,
+                {value,Value2, _} = erl_eval:exprs([ImVar2], erl_eval:new_bindings()),
+                [AccRe, AccIm + Value2];
+            ({op,1,'-',{op,1,'*',Var5,Var6}}, [AccRe, AccIm]) ->
+                ImVar2 = case Var5 of
+                             {atom, 1, i} -> Var6;
+                             _ -> Var5
+                         end,
+                {value,Value2, _} = erl_eval:exprs([ImVar2], erl_eval:new_bindings()),
+                [AccRe, AccIm - Value2];
+            (R, [AccRe, AccIm]) -> io:format("R = ~p~n", [R]), [AccIm, AccRe]
         end, [0,0], [Var1, {op,1,Op,Var2}]),
-    io:format("~p   ~pi~n", [Re, Im]),
-    Proplist = [
-        {type, complex},
-        {value, {Re, Im}}
-    ],
+    Proplist = [{type, complex}, {value, {Re, Im}}],
     {Name, Proplist}.
 
 get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
     Tokens1 = reassign_tokens(Tokens0, Map),
-%%    io:format("Tokens1: ~p~n", [Tokens1]),
 	{ok,[Abs]} = erl_parse:parse_exprs(Tokens1),
-%%	io:format("Abs: ~p~n", [Abs]),
 	case quadratic_equations:reduse_form(Abs) of
-		{ok, Value} ->
-%%			io:format("Value: ~p~n", [Value]),
-			{function, {Name, Var}, Value};
+		{ok, Value} -> {function, {Name, Var}, Value};
 		E -> E
 	end;
-%%	{value,Value,_} = erl_eval:exprs(Abs, erl_eval:new_bindings()),
-
 
 get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]], Map) ->
 	Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
@@ -179,11 +189,12 @@ get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
     Tokens = reassign_tokens(Tokens0, Map),
         try
 		{ok, AbsForm} = erl_parse:parse_exprs(Tokens),
-%%		io:format("AbsForm: ~p~n", [AbsForm]),
 			try
 				{value,Value,_Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
-					if is_atom(Value) -> {reassign1, Name, AbsForm};
-						true -> {variable, Name, Value}
+					case is_atom(Value) of
+                        true when Value == i -> {complex, Name, AbsForm};
+                        true -> {reassign1, Name, AbsForm};
+						_ -> {variable, Name, Value}
 					end
 			catch
 			    _:_  ->
@@ -211,18 +222,3 @@ print_variable([{type, matrice},{value, Value}]) -> [io:format("~p~n", [List]) |
 print_variable([{type, function},{value, _Value}]) -> io:format("~n");
 
 print_variable(_) -> ok.
-
-
-
-%%arg_to_binary(Arg) ->
-%%	try list_to_binary(Arg)
-%%	catch _:_ -> error
-%%	end.
-%%
-%%parse_expression(Input) ->
-%%	Arg1 = binary:replace(Input, [<<" ">>], <<"">>, [global]),
-%%	case binary:split(Arg1, [<<"=">>], []) of
-%%		[Name, Expr] ->
-%%			io:format("Name: ~p~nExpression: ~p~n", [Name, Expr]);
-%%		E -> {error, E}
-%%	end.
