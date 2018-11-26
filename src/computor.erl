@@ -132,8 +132,11 @@ execute_token({Type,Name, Expr}, _) when
     {Name, Proplist};
 
 execute_token({complex,Name,[{atom,1,i}]}, _) -> {Name, [{type, complex},{value, {0, 1}}]};
+execute_token({complex,Name,[{op,1,'*',{integer,1,Val},{atom,1,i}}]}, _) -> {Name, [{type, complex},{value, {0, Val}}]};
+execute_token({complex,Name,[{op,1,'*',{op,1,'+',{integer,1,Val}},{atom,1,i}}]}, _) -> {Name, [{type, complex},{value, {0, Val}}]};
+execute_token({complex,Name,[{op,1,'*',{op,1,'-',{integer,1,Val}},{atom,1,i}}]}, _) -> {Name, [{type, complex},{value, {0, -1*Val}}]};
 
-execute_token({complex,Name, [{op,1,Op, Var1, Var2}] = T}, _) ->
+execute_token({complex,Name, [{op,1,Op, Var1, Var2}]}, _) ->
     [Re, Im] = lists:foldl(
         fun({Type,1,Val}, [AccRe, AccIm]) when Type == integer orelse Type == float -> [AccRe + Val, AccIm];
             ({op,1,'-',{Type,1,Val}}, [AccRe, AccIm]) when Type == integer orelse Type == float -> [AccRe - Val, AccIm];
@@ -159,10 +162,12 @@ execute_token({complex,Name, [{op,1,Op, Var1, Var2}] = T}, _) ->
                          end,
                 {value,Value2, _} = erl_eval:exprs([ImVar2], erl_eval:new_bindings()),
                 [AccRe, AccIm - Value2];
-            (R, [AccRe, AccIm]) -> io:format("R = ~p~n", [R]), [AccIm, AccRe]
+            (_, [AccRe, AccIm]) -> [AccRe, AccIm]
         end, [0,0], [Var1, {op,1,Op,Var2}]),
     Proplist = [{type, complex}, {value, {Re, Im}}],
-    {Name, Proplist}.
+    {Name, Proplist};
+
+execute_token(_, _) -> io:format("ERROR: Wrong input data!~n").
 
 get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
@@ -220,5 +225,15 @@ print_variable([{type, variable},{value, Value}]) -> io:format("~p~n", [Value]);
 print_variable([{type, matrice},{value, Value}]) -> [io:format("~p~n", [List]) || List <- Value];
 
 print_variable([{type, function},{value, _Value}]) -> io:format("~n");
+
+print_variable([{type, complex},{value, {0, 0}}]) -> io:format("0*i~n");
+print_variable([{type, complex},{value, {0, Im}}]) when Im == 1 -> io:format("i~n");
+print_variable([{type, complex},{value, {0, Im}}]) when Im == -1 -> io:format("-i~n");
+print_variable([{type, complex},{value, {0, Im}}]) -> io:format("~pi~n", [Im]);
+print_variable([{type, complex},{value, {Re, 0}}]) -> io:format("~p + 0*i~n", [Re]);
+print_variable([{type, complex},{value, {Re, Im}}]) when Im == 1 -> io:format("~p + i~n", [Re]);
+print_variable([{type, complex},{value, {Re, Im}}]) when Im > 0 -> io:format("~p + ~pi~n", [Re, Im]);
+print_variable([{type, complex},{value, {Re, Im}}]) when Im == -1 -> io:format("~p - i~n", [Re]);
+print_variable([{type, complex},{value, {Re, Im}}]) -> io:format("~p - ~pi~n", [Re, -1*Im]);
 
 print_variable(_) -> ok.
