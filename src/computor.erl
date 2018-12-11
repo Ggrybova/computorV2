@@ -24,6 +24,7 @@ go(Map0) ->
 	case Arg0 of
 		"q\n" -> ok;
         "clean\n" -> io:format("ok~n"), go(#{});
+        "dump\n" -> dump(Map0), go(Map0);
 		_ ->
             {ok, Map1} = get_map(Arg0, Map0),
 			io:format("Map = ~p~n", [Map1]),
@@ -43,15 +44,18 @@ get_map(Arg0, Map) ->
         end,
 %%    io:format("Arg = ~p~n", [Arg]),
     case erl_scan:string(Arg) of
-        {ok, Tokens0, _} ->
-            Tokens = case lists:member({'^', 1}, Arg0) of
-                         true -> power(Tokens0);
-                         _ -> Tokens0
-                     end,
-            io:format("Tokens = ~p~n", [Tokens]),
+        {ok, Tokens, _} ->
+%%        {ok, Tokens0, _} ->
+%%            io:format("Tokens0 = ~p~n", [Tokens0]),
+%%            Tokens = case lists:member({'^', 1}, Tokens0) of
+%%                         true -> io:format("'^' - true~n"),
+%%                             power(Tokens0);
+%%                         _ -> Tokens0
+%%                     end,
+%%            io:format("Tokens = ~p~n", [Tokens]),
             case execute_token(get_type(Tokens, Map), Map) of
                 {Name, Proplist} ->
-                    print_variable(Proplist),
+                    print_variable(Name, Proplist),
                     {ok, maps:put(Name, Proplist, Map)};
                 _ -> {ok, Map}
             end;
@@ -88,8 +92,15 @@ get_map(Arg0, Map) ->
 
 power(Tokens0) -> power(Tokens0, []).
 
+power([], Acc) -> lists:reverse(Acc);
 
+power([{_,1,X},{'^',1},{_,1,Y}|T], Acc) ->
+    power(T, [{integer, 1, math:pow(X, Y)}|Acc]);
 
+power([H|T], Acc) ->
+    power(T, [H|Acc]).
+
+%%power([H], Acc) -> power([], [H|Acc]).
 
 reassign_tokens(Tokens, Map) ->
     NewTokens = lists:filtermap(
@@ -140,7 +151,9 @@ lost_multiplication(_, [P|T], Acc) -> lost_multiplication(P, T, [P|Acc]).
 execute_token({Type,Name, Expr}, _) when
         Type == variable orelse
         Type == matrice orelse
-        Type == function ->
+        Type == function orelse
+        Type == polinomial_function orelse
+        Type == linear_function ->
     Proplist = [
         {type, Type},
         {value, Expr}
@@ -188,6 +201,8 @@ execute_token({complex,Name, [{op,1,Op, Var1, Var2}]}, _) ->
 
 execute_token({_, [{type, _}, {value, _}]} = Res, _) -> Res;
 
+execute_token({error, Res}, _) -> io:format("ERROR: ~p~n", [Res]);
+
 execute_token(_, _) -> io:format("ERROR: Wrong input data!~n").
 
 get_type([{atom, 1, Name1}, {'=', 1}, {atom, 1, i}], Map) ->
@@ -202,11 +217,24 @@ get_type([{atom, 1, Name1}, {'=', 1}, {atom, 1, Name2}], Map) ->
 get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
     Tokens1 = reassign_tokens(Tokens0, Map),
-	{ok,[Abs]} = erl_parse:parse_exprs(Tokens1),
-	case quadratic_equations:reduse_form(Abs) of
-		{ok, Value} -> {function, {Name, Var}, Value};
-		E -> E
-	end;
+%%    io:format("TokensForFun: ~p~n", [Tokens1]),
+    case lists:member({'^', 1}, Tokens1) of
+        true ->
+            case lists:member({')',1}, Tokens1) of
+                true -> {function, {Name, Var}, Tokens1};
+                _ -> case quadratic_equations:reduse_form_of_polinom(Tokens1, Var) of
+                         {error, Reason} -> {error, Reason};
+                         Val -> {polinomial_function, {Name, Var}, Val}
+                     end
+            end;
+        _ ->
+            {ok,[Abs]} = erl_parse:parse_exprs(Tokens1),
+            case quadratic_equations:reduse_form(Abs) of
+                {ok, Value} -> {linear_function, {Name, Var}, Value};
+                E -> E
+            end
+    end;
+
 
 get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]], Map) ->
 	Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
@@ -220,24 +248,20 @@ get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]], Map) ->
             ({']', 1}, Acc) -> [']' | Acc];
             (_, Acc) -> Acc
         end, [], Tokens),
-%%    io:format(":Is_matrice0:   ~p~n", [Is_matrice0]),
     case string:str(Is_matrice0, ['[', '[', '[']) of
         0 ->
             try
                 {ok, Abs} = erl_parse:parse_exprs(Tokens),
                 try
                     {value, Value, _} = erl_eval:exprs(Abs, erl_eval:new_bindings()),
-%%            io:format("::   ~p~n", [Value]),
                     Is_matrice = lists:foldl(
                         fun(_, false) -> false;
                             (El, Acc) ->
-%%                        io:format("El:   ~p~nAcc:   ~p~n", [El, Acc]),
                                 case length(El) of
                                     Acc -> Acc;
                                     _ -> false
                                 end
                         end, length(lists:nth(1, Value)), Value),
-%%            io:format("Is_matrice:   ~p~n", [Is_matrice]),
                     case Is_matrice of
                         false -> error;
                         _ -> {matrice, Name, Value}
@@ -254,9 +278,13 @@ get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]], Map) ->
 
 get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
-    Tokens = reassign_tokens(Tokens0, Map),
-                io:format("Tokens:   ~p~n", [Tokens]),
+    Tokens1 = reassign_tokens(Tokens0, Map),
     try
+        Tokens = case lists:member({'^', 1}, Tokens1) of
+                     true -> io:format("'^' - true~n"),
+                         power(Tokens1);
+                     _ -> Tokens1
+                 end,
         {ok, AbsForm} = erl_parse:parse_exprs(Tokens),
         try
             {value, Value, _Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
@@ -276,31 +304,69 @@ get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
     catch
         _:_ ->
             io:format("get_type!!!!!!~n"),
-            case lists:keyfind(atom, 1, Tokens) of
-                {atom, 1, _} -> {reassign2, Name, Tokens};
-                _ -> {expression2, Name, Tokens}
+            case lists:keyfind(atom, 1, Tokens1) of
+                {atom, 1, _} -> {reassign2, Name, Tokens1};
+                _ -> {expression2, Name, Tokens1}
             end
     end;
 
 get_type(X, _) -> X.
 
-print_variable([{type, variable},{value, Value}]) -> io:format("~p~n", [Value]);
+dump(Map) ->
+    maps:filter(
+        fun(Key, Val) ->
+            case Val of
+                [{type, Type},_] when
+                    Type == polinomial_function orelse
+                    Type == function orelse
+                    Type == linear_function ->
+                    {Name, Var} = Key,
+                    io:format("~p(~p) = ", [Name, Var]);
+                _ -> io:format("~p = ", [Key])
+            end,
+            print_variable(Key, Val),
+            true
+        end, Map).
 
-print_variable([{type, matrice},{value, Value}]) -> [io:format("~p~n", [List]) || List <- Value];
 
-print_variable([{type, function},{value, _Value}]) -> io:format("~n");
+print_variable(_, [{type, variable},{value, Value}]) -> io:format("~p~n", [Value]);
 
-print_variable([{type, complex},{value, {0, 0}}]) -> io:format("0*i~n");
-print_variable([{type, complex},{value, {0, Im}}]) when Im == 1 -> io:format("i~n");
-print_variable([{type, complex},{value, {0, Im}}]) when Im == -1 -> io:format("-i~n");
-print_variable([{type, complex},{value, {0, Im}}]) -> io:format("~pi~n", [Im]);
-print_variable([{type, complex},{value, {Re, 0}}]) -> io:format("~p + 0*i~n", [Re]);
-print_variable([{type, complex},{value, {Re, Im}}]) when Im == 1 -> io:format("~p + i~n", [Re]);
-print_variable([{type, complex},{value, {Re, Im}}]) when Im > 0 -> io:format("~p + ~pi~n", [Re, Im]);
-print_variable([{type, complex},{value, {Re, Im}}]) when Im == -1 -> io:format("~p - i~n", [Re]);
-print_variable([{type, complex},{value, {Re, Im}}]) -> io:format("~p - ~pi~n", [Re, -1*Im]);
+print_variable(_, [{type, matrice},{value, Value}]) -> [io:format("~p~n", [List]) || List <- Value];
+print_variable(_, [{type, complex},{value, {0, 0}}]) -> io:format("0*i~n");
+print_variable(_, [{type, complex},{value, {0, Im}}]) when Im == 1 -> io:format("i~n");
+print_variable(_, [{type, complex},{value, {0, Im}}]) when Im == -1 -> io:format("-i~n");
+print_variable(_, [{type, complex},{value, {0, Im}}]) -> io:format("~pi~n", [Im]);
+print_variable(_, [{type, complex},{value, {Re, 0}}]) -> io:format("~p + 0*i~n", [Re]);
+print_variable(_, [{type, complex},{value, {Re, Im}}]) when Im == 1 -> io:format("~p + i~n", [Re]);
+print_variable(_, [{type, complex},{value, {Re, Im}}]) when Im > 0 -> io:format("~p + ~pi~n", [Re, Im]);
+print_variable(_, [{type, complex},{value, {Re, Im}}]) when Im == -1 -> io:format("~p - i~n", [Re]);
+print_variable(_, [{type, complex},{value, {Re, Im}}]) -> io:format("~p - ~pi~n", [Re, -1*Im]);
+print_variable(_, [{type, function},{value, Token}]) ->
+    lists:foreach(
+        fun({_,_,Var}) -> io:format("~p ", [Var]);
+            ({dot, 1}) -> io:format("~n");
+            ({Op, _}) -> io:format("~s ", [Op])
+        end, Token);
+print_variable({_, Var}, [{type, polinomial_function},{value, TupleList}]) ->
+    [{MaxDegree, _}|_] =  TupleList,
+    lists:foreach(
+        fun({_, 0}) -> ok;
+            ({Degree, 1}) when Degree == MaxDegree -> io:format("~p^~p ", [Var, MaxDegree]);
+            ({Degree, Coef}) when Coef > 0 andalso Degree == MaxDegree-> io:format("~p * ~p^~p ", [Coef, Var, MaxDegree]);
+            ({0, Coef}) when Coef > 0 -> io:format("+ ~p ", [Coef]);
+            ({0, Coef}) -> io:format("- ~p ", [-Coef]);
+            ({1, 1}) -> io:format("+ ~p ", [Var]);
+            ({1, -1}) -> io:format("- ~p ", [Var]);
+            ({1, Coef}) when Coef > 0 -> io:format("+ ~p * ~p ", [Coef, Var]);
+            ({1, Coef}) -> io:format("- ~p * ~p ", [-Coef, Var]);
+            ({Degree, 1}) -> io:format("+ ~p^~p ", [Var, Degree]);
+            ({Degree, -1}) -> io:format("- ~p^~p ", [Var, Degree]);
+            ({Degree, Coef}) when Coef > 0 -> io:format("+ ~p * ~p^~p ", [Coef, Var, Degree]);
+            ({Degree, Coef}) -> io:format("- ~p * ~p^~p ", [-Coef, Var, Degree])
+        end, TupleList),
+    io:format("~n");
 
-print_variable(_) -> ok.
+print_variable(_, _) -> ok.
 
 %%====================================================================
 %% Tests
@@ -468,15 +534,41 @@ complex_test_() ->
         a27 => [{type,complex},{value,{0,1}}],
         a28 => [{type,complex},{value,{0,0}}]})].
 
-%%function_test_() ->
-%%    Map = #{},
-%%    Args1 = [
-%%
-%%    ],
-%%    Test1 = lists:foldl(fun(Arg, Acc) -> {ok, Res1} = get_map(Arg, Acc), Res1 end, Map, Args1),
-%%    ?_assertEqual(Test1, #{
-%%
-%%}).
+function_test_() ->
+    Map = #{},
+    Args1 = [
+        "funA(x) = x^2 + 2x + 1",
+        "funB(x) = -x^2 + 2x^1 + 1 - 3x",
+        "funC(z) = -4z^0",
+        "funD(x) = 2*x^5 + 4x^2 - 5*x + 4",
+        "funE(x) = + 4x^2 + 4 +2*x^5  - 5*x",
+        "funF(y) = -3/y^1 + 0",
+        "funG(y) = 3/y^1 + 0 + 7 - 8 + 3"
+    ],
+    Args2 = [
+        "funA(x) = 3/y^1 + 2^1",
+        "funB(x) = y^(-1)+3",
+        "funC(z) = 4 -5 + (x + 2)^2 - 4",
+        "funD(x) = -17z^1",
+        "funE(x) =  + 3x-17z^1",
+        "funF(y) = + 3x-17x^1",
+        "funG(y) = 0",
+        "funH(x) = x+(2+",
+        "funI(y) = 3/y + 2^1"
+    ],
+    Test1 = lists:foldl(fun(Arg, Acc) -> {ok, Res1} = get_map(Arg, Acc), Res1 end, Map, Args1),
+    [?_assertEqual(Test1, #{
+        {funA,x} => [{type,polinomial_function},{value,[{2,1},{1,2},{0,1}]}],
+        {funB,x} => [{type,polinomial_function},{value,[{2,-1},{1,-1},{0,1}]}],
+        {funC,z} => [{type,polinomial_function},{value,[{0,-4}]}],
+        {funD,x} => [{type,polinomial_function},{value,[{5,2},{2,4},{1,-5},{0,4}]}],
+        {funE,x} => [{type,polinomial_function},{value,[{5,2},{2,4},{1,-5},{0,4}]}],
+        {funF,y} => [{type,polinomial_function},{value,[{1,-3.0},{0,0}]}],
+        {funG,y} => [{type,polinomial_function},{value,[{1,3.0},{0,2}]}]}),
+    ?_assertEqual(Test1, #{
+        {funB,y} => [{type,function},{value,[{integer,1,1},{'*',1},{atom,1,y},{'^',1}, {'(',1}, {'-',1}, {integer,1,1}, {')',1}, {'+',1}, {integer,1,3}, {dot,1}]}],
+        {funC,x} => [{type,function},{value,[{integer,1,4},{'-',1},{integer,1,5},{'+',1},{'(',1},{integer,1,1},{'*',1},{atom,1,x},{'+',1},{integer,1,2},{')',1},{'^',1},{integer,1,2},{'-',1},{integer,1,4},{dot,1}]}],
+        {funF,x} => [{type,polinomial_function},{value,[{1,-14}]}]})].
 
 -endif.
 %%  rp(eunit:test(computor)).

@@ -11,7 +11,8 @@
 
 -export([
     main/1,
-    reduse_form/1
+    reduse_form/1,
+    reduse_form_of_polinom/2
 ]).
 %%====================================================================
 %% API
@@ -73,6 +74,56 @@ reduse_form({op,1,Operation, Part1, Part2}) ->
     {ok, [{op,1,Operation, Reduse1, Reduse2}]};
 
 reduse_form(Arg) -> io:format("Arg:~p~n", [Arg]), error.
+
+reduse_form_of_polinom([{Op, 1}|T], Name) when Op == '+' orelse Op == '-' ->
+    reduse_form_of_polinom([{Op, 1}], T, [], Name);
+
+reduse_form_of_polinom(Tokens, Name) -> reduse_form_of_polinom([{'+', 1}|Tokens], Name).
+
+reduse_form_of_polinom(_, [], Acc, _) -> lists:reverse(lists:keysort(1, Acc));
+
+reduse_form_of_polinom(H0, [{dot,1}], Acc, Name) -> reduse_form_of_polinom(H0, [{'+', 1}], Acc, Name);
+
+reduse_form_of_polinom(H0, [{Op, 1}|T], Acc, Var) when (Op == '+' orelse Op == '-') ->
+    case get_monomial(lists:reverse(H0)) of
+        {Coef, Name, Degree} when Name == Var orelse Name == undefined ->
+            NewAcc =
+                case lists:keyfind(Degree, 1, Acc) of
+                    false ->
+                        lists:keystore(Degree, 1, Acc, {Degree, Coef});
+                    {D, C} ->
+                        lists:keyreplace(D, 1, Acc, {D, C + Coef})
+                end,
+            reduse_form_of_polinom([{Op, 1}], T, NewAcc, Var);
+        _ ->
+            {error, "Not valid polinomial!"}
+    end;
+
+reduse_form_of_polinom(H0, [H|T], Acc, Name) -> reduse_form_of_polinom([H|H0], T, Acc, Name).
+
+get_monomial(List) ->
+    {Part01, Part02} = lists:splitwith(
+        fun({atom,1,_}) -> false;
+            (_) -> true
+        end, List),
+    {Degree, Var, Part2} =
+        case Part02 of
+            [{atom,1,V}, {'^',1}, {integer,1,X}|T] -> {X, V, T};
+            [{atom,1,V}|T] -> {1, V, T};
+            T2 -> {0, undefined, T2}
+        end,
+    Part1 =
+        case Part2 of
+            [] when Var =/= undefined -> lists:droplast(Part01);
+            _ -> Part01
+        end,
+    Val = Part1 ++ Part2 ++ [{dot,1}],
+    try
+        {ok, AbsForm} = erl_parse:parse_exprs(Val),
+        {value, Value, _Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
+        {Value, Var, Degree}
+    catch _:_ -> {error, "Not valid polinomial!"}
+    end.
 
 %%====================================================================
 %% Internal functions
