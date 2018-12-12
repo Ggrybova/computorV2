@@ -71,9 +71,9 @@ reduse_form({op,1,Operation, Part1, Part2}) ->
 				end
 		end,
 	io:format(")"),
-    {ok, [{op,1,Operation, Reduse1, Reduse2}]};
+    {ok, {op,1,Operation, Reduse1, Reduse2}};
 
-reduse_form(Arg) -> io:format("Arg:~p~n", [Arg]), error.
+reduse_form(_) -> error.
 
 reduse_form_of_polinom([{Op, 1}|T], Name) when Op == '+' orelse Op == '-' ->
     reduse_form_of_polinom([{Op, 1}], T, [], Name);

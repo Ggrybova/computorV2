@@ -25,9 +25,9 @@ go(Map0) ->
 		"q\n" -> ok;
         "clean\n" -> io:format("ok~n"), go(#{});
         "dump\n" -> dump(Map0), go(Map0);
+        "print\n" -> io:format("Map = ~p~n", [Map0]), go(Map0);
 		_ ->
             {ok, Map1} = get_map(Arg0, Map0),
-			io:format("Map = ~p~n", [Map1]),
 			go(Map1)
 	end.
 
@@ -148,6 +148,14 @@ lost_multiplication(_, [], Acc) -> lost_multiplication([], [], Acc);
 
 lost_multiplication(_, [P|T], Acc) -> lost_multiplication(P, T, [P|Acc]).
 
+execute_token({linear_function,Name, Expr}, _) ->
+    io:format("~n"),
+    Proplist = [
+        {type, linear_function},
+        {value, Expr}
+    ],
+    {Name, Proplist};
+
 execute_token({Type,Name, Expr}, _) when
         Type == variable orelse
         Type == matrice orelse
@@ -214,18 +222,22 @@ get_type([{atom, 1, Name1}, {'=', 1}, {atom, 1, Name2}], Map) ->
         _ -> error
     end;
 
-get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], Map) ->
+get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]] = Token, Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
     Tokens1 = reassign_tokens(Tokens0, Map),
 %%    io:format("TokensForFun: ~p~n", [Tokens1]),
     case lists:member({'^', 1}, Tokens1) of
         true ->
-            case lists:member({')',1}, Tokens1) of
-                true -> {function, {Name, Var}, Tokens1};
-                _ -> case quadratic_equations:reduse_form_of_polinom(Tokens1, Var) of
-                         {error, Reason} -> {error, Reason};
-                         Val -> {polinomial_function, {Name, Var}, Val}
-                     end
+            case quadratic_equations:reduse_form_of_polinom(Tokens1, Var) of
+                {error, Reason} ->
+                    Tokens2 = reassign_tokens(Tokens1, #{Var => [{type, variable}, {value, 1}]}),
+%%                    io:format("Tokens1: ~p~nTokens2: ~p~n", [Tokens1,Tokens2]),
+                    V = get_type([{atom,1,Name} | [{'=',1} | lists:droplast(Tokens2)]], #{}),
+                    case V of
+                        {variable,_,_} -> {function, {Name, Var}, Tokens1};
+                        _ -> {error, Reason}
+                    end;
+                Val -> {polinomial_function, {Name, Var}, Val}
             end;
         _ ->
             {ok,[Abs]} = erl_parse:parse_exprs(Tokens1),
@@ -275,13 +287,14 @@ get_type([{atom,1,Name} | [{'=',1} | [{'[',1} | Expr]]], Map) ->
         _ -> error
     end;
 
-
+%%!!!!!!!!!!!!!!!!
 get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
     Tokens1 = reassign_tokens(Tokens0, Map),
     try
         Tokens = case lists:member({'^', 1}, Tokens1) of
-                     true -> io:format("'^' - true~n"),
+                     true ->
+%%                         io:format("'^' - true~n"),
                          power(Tokens1);
                      _ -> Tokens1
                  end,
@@ -314,20 +327,20 @@ get_type(X, _) -> X.
 
 dump(Map) ->
     maps:filter(
-        fun(Key, Val) ->
-            case Val of
-                [{type, Type},_] when
-                    Type == polinomial_function orelse
-                    Type == function orelse
-                    Type == linear_function ->
-                    {Name, Var} = Key,
-                    io:format("~p(~p) = ", [Name, Var]);
-                _ -> io:format("~p = ", [Key])
-            end,
-            print_variable(Key, Val),
-            true
+        fun
+            ({Name, Var}, [{type, linear_function}, {value, Value}]) ->
+                io:format("~p(~p) = ", [Name, Var]),
+                quadratic_equations:reduse_form(Value),
+                io:format("~n"),
+                true;
+            ({Name, Var}, Val) ->
+                io:format("~p(~p) = ", [Name, Var]),
+                print_variable({Name, Var}, Val),
+                true;
+            (Key, Val) -> io:format("~p = ", [Key]),
+                print_variable(Key, Val),
+                true
         end, Map).
-
 
 print_variable(_, [{type, variable},{value, Value}]) -> io:format("~p~n", [Value]);
 
@@ -347,6 +360,8 @@ print_variable(_, [{type, function},{value, Token}]) ->
             ({dot, 1}) -> io:format("~n");
             ({Op, _}) -> io:format("~s ", [Op])
         end, Token);
+%%    io:format("~n");
+
 print_variable({_, Var}, [{type, polinomial_function},{value, TupleList}]) ->
     [{MaxDegree, _}|_] =  TupleList,
     lists:foreach(
@@ -366,7 +381,12 @@ print_variable({_, Var}, [{type, polinomial_function},{value, TupleList}]) ->
         end, TupleList),
     io:format("~n");
 
-print_variable(_, _) -> ok.
+%%print_variable({Name, Var}, [{type, linear_function},{value, TupleList}]) -> io:format("~n");
+
+
+print_variable(_, X) ->
+%%    io:format("~nX: ~p~n", [X]),
+ ok.
 
 %%====================================================================
 %% Tests
