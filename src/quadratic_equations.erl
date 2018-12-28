@@ -94,6 +94,7 @@ reduse_form_of_polinom(H0, [{Op, 1}|T], Acc, Var) when (Op == '+' orelse Op == '
                     {D, C} ->
                         lists:keyreplace(D, 1, Acc, {D, C + Coef})
                 end,
+%%            io:format("Op: ~p~n", [Op]),
             reduse_form_of_polinom([{Op, 1}], T, NewAcc, Var);
         _ ->
             {error, "Not valid polinomial!"}
@@ -112,11 +113,17 @@ get_monomial(List) ->
             [{atom,1,V}|T] -> {1, V, T};
             T2 -> {0, undefined, T2}
         end,
+    io:format("Part01: ~p~n", [Part01]),
     Part1 =
         case Part2 of
-            [] when Var =/= undefined -> lists:droplast(Part01);
+            [] when Var =/= undefined ->
+                case lists:last(Part01) of
+                    {Op,1} when Op == '/' -> [not_polinom];
+                    _ -> lists:droplast(Part01)
+                end;
             _ -> Part01
         end,
+    io:format("Part1: ~p~n", [Part1]),
     Val = Part1 ++ Part2 ++ [{dot,1}],
     try
         {ok, AbsForm} = erl_parse:parse_exprs(Val),
