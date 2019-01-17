@@ -13,7 +13,8 @@
 %% API
 %%====================================================================
 -export([
-    main/0
+    main/0,
+    get_var_by_name/2
 ]).
 
 main() ->
@@ -102,7 +103,32 @@ power([{_,1,X},{'^',1},{_,1,Y}|T], Acc) ->
 power([H|T], Acc) ->
     power(T, [H|Acc]).
 
-%%power([H], Acc) -> power([], [H|Acc]).
+reassign_func(Tokens, Map) ->
+    reassign_func(Tokens, Map, []).
+
+reassign_func([H], _, Acc) -> lists:reverse([H|Acc]);
+reassign_func(Tokens, Map, Acc) ->
+    case Tokens of
+        [{atom, 1, FunName}, {'(', 1}, {integer, 1, 1}, {'*', 1}, {integer, 1, Val}, {')', 1} | Tail] ->
+            Fun = [{atom, 1, FunName}, {'(', 1}, {integer, 1, Val}, {')', 1}],
+            NewAcc = calc_fun(FunName, Fun, Map, Val, Acc),
+            reassign_func(Tail, Map, NewAcc);
+        [{atom, 1, FunName}, {'(', 1}, {integer, 1, Val}, {')', 1} | Tail] ->
+            Fun = [{atom, 1, FunName}, {'(', 1}, {integer, 1, Val}, {')', 1}],
+            NewAcc = calc_fun(FunName, Fun, Map, Val, Acc),
+            reassign_func(Tail, Map, NewAcc);
+        [H|T] -> reassign_func(T, Map, [H|Acc])
+    end.
+
+calc_fun(FunName, Fun, Map, Val, Acc) ->
+    case get_var_by_name(FunName, Map) of
+        {{_, Var}, [_, {value, Tok}]} ->
+            Tokens2 = reassign_tokens(Tok, #{Var => [{type, variable}, {value, Val}]}),
+            {ok, Abs} = erl_parse:parse_exprs(Tokens2),
+            {value, V, _} = erl_eval:exprs(Abs, erl_eval:new_bindings()),
+            [{integer, 1, V} | Acc];
+        _ -> [Fun | Acc]
+    end.
 
 reassign_tokens(Tokens, Map) ->
     NewTokens = lists:filtermap(
@@ -144,7 +170,7 @@ lost_multiplication({Type,1,_Int}, [{atom,1,Atom}|T], Acc) when Type == integer 
     lost_multiplication({atom,1,Atom}, T, [{atom,1,Atom} | [{'*',1}| Acc]]);
 
 lost_multiplication(_, [{atom,1,Atom}|T], [H | _] = Acc) when H =/= {'/',1} ->
-    io:format("Acc: ~p~nTail: ~p~n", [Acc, T]),
+%%    io:format("Acc: ~p~nTail: ~p~n", [Acc, T]),
     lost_multiplication({atom,1,Atom}, T, [{atom,1,Atom} | [{'*',1}| [{integer,1,1} | Acc]]]);
 
 lost_multiplication(_, [], Acc) -> lost_multiplication([], [], Acc);
@@ -231,11 +257,11 @@ get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]
 %%    io:format("TokensForFun: ~p~n", [Tokens1]),
     case lists:member({'^', 1}, Tokens1) of
         true ->
-            io:format("Tokens1: ~p~n", [Tokens1]),
+%%            io:format("Tokens1: ~p~n", [Tokens1]),
             case quadratic_equations:reduse_form_of_polinom(Tokens1, Var) of
                 {error, Reason} ->
                     Tokens2 = reassign_tokens(Tokens1, #{Var => [{type, variable}, {value, 1}]}),
-%%                    io:format("Tokens1: ~p~nTokens2: ~p~n", [Tokens1,Tokens2]),
+                    io:format("Tokens1: ~p~nTokens2: ~p~n", [Tokens1,Tokens2]),
                     V = get_type([{atom,1,Name} | [{'=',1} | lists:droplast(Tokens2)]], #{}),
                     case V of
                         {variable,_,_} -> {function, {Name, Var}, Tokens1};
@@ -249,7 +275,7 @@ get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]
             case erl_parse:parse_exprs(Tokens1) of
                 {ok,[Abs]} ->
                     case quadratic_equations:reduse_form(Abs) of
-                        {ok, Value} -> {linear_function, {Name, Var}, Value};
+                        {ok, Value} -> {linear_function, {Name, Var}, Tokens1};
                         E -> E
                     end;
                 _ -> error
@@ -319,13 +345,25 @@ get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
             _:_ ->
                 case lists:keyfind(atom, 1, Tokens) of
                     {atom, 1, i} -> {complex, Name, AbsForm};
-                    {atom, 1, _} -> {reassign1, Name, AbsForm};
-                    _ -> {expression1, Name, AbsForm}
+                    {atom, 1, Fun} = Res ->
+%%                        io:format("Fun:~p reassign1: ~p~nAbsForm~p~nTokens: ~p~n", [Fun, Res, AbsForm, Tokens]),
+                        case get_var_by_name(Fun, Map) of
+                            {{N, Var}, [Type, {value,Val}]} ->
+                                Tokens2 = reassign_func(Tokens, Map),
+                                {ok, Abs} = erl_parse:parse_exprs(Tokens2),
+%%                                io:format("Abs: ~p~n"Tail:, [Abs]),
+                                {value,V,_} = erl_eval:exprs(Abs, erl_eval:new_bindings()),
+%%                                io:format("~p = ~p~n", [Name, V]),
+                                {variable, Name, V};
+                            X -> io:format("X: ~p~n", [X]), io:format("111get_type!!!!!!~n"),
+                                {reassign1, Name, AbsForm}
+                        end;
+                    _ -> io:format("expression1: ~p~n", [AbsForm]),{expression1, Name, AbsForm}
                 end
         end
     catch
         _:_ ->
-            io:format("get_type!!!!!!~n"),
+            io:format("222get_type!!!!!!~n"),
             case lists:keyfind(atom, 1, Tokens1) of
                 {atom, 1, _} -> {reassign2, Name, Tokens1};
                 _ -> {expression2, Name, Tokens1}
@@ -393,9 +431,17 @@ print_variable({_, Var}, [{type, polinomial_function},{value, TupleList}]) ->
 %%print_variable({Name, Var}, [{type, linear_function},{value, TupleList}]) -> io:format("~n");
 
 
-print_variable(_, X) ->
+print_variable(_, _) ->
 %%    io:format("~nX: ~p~n", [X]),
  ok.
+
+get_var_by_name(Name, Map) ->
+    maps:fold(
+        fun(N, Val, {}) when N == Name -> {N, Val};
+            ({N, Var}, Val, {}) when N == Name -> {{N, Var}, Val};
+            (_, _, Acc) -> Acc
+        end, {}, Map).
+
 
 %%====================================================================
 %% Tests
