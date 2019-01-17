@@ -54,18 +54,37 @@ get_map(Arg0, Map) ->
 %%                         _ -> Tokens0
 %%                     end,
 %%            io:format("Tokens = ~p~n", [Tokens]),
-            Type = get_type(Tokens, Map),
+            Tokens2 = lists:reverse(Tokens),
+            case Tokens2 of
+                [{'?',1},{'=',1} | Expression] ->
+%%                    io:format("COMPUTATION!~n"),
+                    computation(lists:reverse(Expression), Map);
+                _ ->
+                    Type = get_type(Tokens, Map),
 %%            io:format("Type = ~p~n", [Type]),
-            case execute_token(Type, Map) of
-                {Name, Proplist} ->
-                    print_variable(Name, Proplist),
-                    {ok, maps:put(Name, Proplist, Map)};
-                _ -> {ok, Map}
+                    case execute_token(Type, Map) of
+                        {Name, Proplist} ->
+                            print_variable(Name, Proplist),
+                            {ok, maps:put(Name, Proplist, Map)};
+                        _ -> {ok, Map}
+                    end
             end;
         {error, R} ->
             io:format("Error format: ~p~n", [R]),
             {ok, Map}
     end.
+
+computation(Expression, Map) ->
+    Tokens = [{atom, 1, name}, {'=', 1} | Expression],
+    Type = get_type(Tokens, Map),
+%%    io:format("Type = ~p~n", [Type]),
+    case execute_token(Type, Map) of
+        {Name, Proplist} ->
+            print_variable(Name, Proplist),
+            {ok, Map};
+        _ -> {ok, Map}
+    end.
+
 
 
 %%!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -380,8 +399,9 @@ dump(Map) ->
     maps:filter(
         fun
             ({Name, Var}, [{type, linear_function}, {value, Value}]) ->
+                {ok, [Abs]} = erl_parse:parse_exprs(Value),
                 io:format("~p(~p) = ", [Name, Var]),
-                quadratic_equations:reduse_form(Value),
+                quadratic_equations:reduse_form(Abs),
                 io:format("~n"),
                 true;
             ({Name, Var}, Val) ->
