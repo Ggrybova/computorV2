@@ -113,9 +113,13 @@ reassign_func(Tokens, Map, Acc) ->
             Fun = [{atom, 1, FunName}, {'(', 1}, {integer, 1, Val}, {')', 1}],
             NewAcc = calc_fun(FunName, Fun, Map, Val, Acc),
             reassign_func(Tail, Map, NewAcc);
-        [{atom, 1, FunName}, {'(', 1}, {integer, 1, Val}, {')', 1} | Tail] ->
-            Fun = [{atom, 1, FunName}, {'(', 1}, {integer, 1, Val}, {')', 1}],
+        [{atom, 1, FunName}, {'(', 1}, {Type, 1, Val}, {')', 1} | Tail] ->
+            Fun = [{atom, 1, FunName}, {'(', 1}, {Type, 1, Val}, {')', 1}],
             NewAcc = calc_fun(FunName, Fun, Map, Val, Acc),
+            reassign_func(Tail, Map, NewAcc);
+        [{atom, 1, FunName}, {'(', 1}, {'-',1}, {Type, 1, Val}, {')', 1} | Tail] ->
+            Fun = [{atom, 1, FunName}, {'(', 1}, {'-',1}, {Type, 1, Val}, {')', 1}],
+            NewAcc = calc_fun(FunName, Fun, Map, Val*(-1), Acc),
             reassign_func(Tail, Map, NewAcc);
         [H|T] -> reassign_func(T, Map, [H|Acc])
     end.
@@ -645,4 +649,46 @@ function_test_() ->
         {funI,y} => [{type,function},{value,[{integer,1,3},{'/',1},{atom,1,y},{'+',1},{integer,1,2},{'^',1},{integer,1,1},{dot,1}]}]})].
 
 -endif.
+
+var_equal_func_test_() ->
+    Map = #{},
+    Args = [
+        "varA = 2 + 4 *2 - 5 %4 + 2 * (4 + 5)\n",
+        "varB = 2 * varA - 5 %4\n",
+        "funA(x) = varA + varB * 4 - 1 / 2 + x\n",
+        "varC = 2 * varA - varB\n",
+        "varD = funA(varC)\n",
+        "varE = funA(varA)\n",
+        "varF = funA(varB)\n",
+        "varG = funA(-238.5)\n"
+    ],
+    Test = lists:foldl(fun(Arg, Acc) -> {ok, Res} = get_map(Arg, Acc), Res end, Map, Args),
+    [?_assertEqual(Test, #{
+        varA => [{type,variable},{value,27}],
+        varB => [{type,variable},{value,53}],
+        varC => [{type,variable},{value,1}],
+        varD => [{type,variable},{value,239.5}],
+        varE => [{type,variable},{value,265.5}],
+        varF => [{type,variable},{value,291.5}],
+        varG => [{type,variable},{value,0.0}],
+        {funA,x} => [{type,linear_function},
+         {value,[{integer,1,1},
+                 {'*',1},
+                 {integer,1,27},
+                 {'+',1},
+                 {integer,1,1},
+                 {'*',1},
+                 {integer,1,53},
+                 {'*',1},
+                 {integer,1,4},
+                 {'-',1},
+                 {integer,1,1},
+                 {'/',1},
+                 {integer,1,2},
+                 {'+',1},
+                 {integer,1,1},
+                 {'*',1},
+                 {atom,1,x},
+                 {dot,1}]}]})].
+
 %%  rp(eunit:test(computor)).
