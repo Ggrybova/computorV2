@@ -33,7 +33,6 @@ go(Map0) ->
 	end.
 
 get_map(Arg0, Map) ->
-%%    io:format("Arg = ~p~n", [Arg0]),
     Arg =
         case lists:member($%, Arg0) of
             true ->
@@ -46,22 +45,34 @@ get_map(Arg0, Map) ->
 %%    io:format("Arg = ~p~n", [Arg]),
     case erl_scan:string(Arg) of
         {ok, Tokens, _} ->
-%%        {ok, Tokens0, _} ->
-%%            io:format("Tokens0 = ~p~n", [Tokens0]),
-%%            Tokens = case lists:member({'^', 1}, Tokens0) of
-%%                         true -> io:format("'^' - true~n"),
-%%                             power(Tokens0);
-%%                         _ -> Tokens0
-%%                     end,
-%%            io:format("Tokens = ~p~n", [Tokens]),
             Tokens2 = lists:reverse(Tokens),
             case Tokens2 of
-                [{'?',1},{'=',1} | Expression] ->
-%%                    io:format("COMPUTATION!~n"),
+                [{'?', 1}, {'=', 1} | Expression] ->
                     computation(lists:reverse(Expression), Map);
+                [{'?', 1}, _, {'=', 1}, {')', 1}, {atom, 1, VarN}, {'(', 1}, {atom, 1, FunN}] ->
+                    case maps:get({FunN, VarN}, Map, undefined) of
+                        [{type, polinomial_function}, {value, [{0, C}]}] ->
+                            M0 = #{degree => 0, a => 0, b => 0, c => C},
+                            quadratic_equations:solve_equation(M0),
+                            {ok, Map};
+                        [{type, polinomial_function}, {value, [{1, B}, {0, C}]}] ->
+                            M1 = #{degree => 1, a => 0, b => B, c => C},
+                            quadratic_equations:solve_equation(M1),
+                            {ok, Map};
+                        [{type, polinomial_function}, {value, [{2, A}, {1, B}, {0, C}]}] ->
+                            M2 = #{degree => 2, a => A, b => B, c => C},
+                            quadratic_equations:solve_equation(M2),
+                            {ok, Map};
+                        [{type, polinomial_function}, _] ->
+                            io:format("The resolution of equations of degree three or more is not required.~n", []),
+                            {ok, Map};
+                        X ->
+                            io:format("X: ~p~n", [X]),
+                            io:format("Can't resolve: ~n", []),
+                            {ok, Map}
+                    end;
                 _ ->
                     Type = get_type(Tokens, Map),
-%%            io:format("Type = ~p~n", [Type]),
                     case execute_token(Type, Map) of
                         {Name, Proplist} ->
                             print_variable(Name, Proplist),
@@ -175,6 +186,32 @@ reassign_tokens(Tokens, Map) ->
         end, Tokens),
     NewTokens.
 
+%%get_func( [{atom,1,FunN},{'(',1},{atom,1,VarN},{')',1}], Map) ->
+%%    case maps:get({FunN,VarN}, Map, undefined) of
+%%        undefined -> notfound
+%%
+%%    end,
+%%    NewTokens = lists:filtermap(
+%%        fun({atom,1,Var}) ->
+%%            case maps:get(Var, Map, undefined) of
+%%                undefined -> {true, {atom,1,Var}};
+%%                Obj ->
+%%                    Type = proplists:get_value(type, Obj),
+%%                    Value = proplists:get_value(value, Obj),
+%%                    case Type of
+%%                        variable ->
+%%                            if is_float(Value) -> {true, {float,1,Value}};
+%%                                true -> {true, {integer,1,Value}}
+%%                            end;
+%%                        matrice -> {true, {matrice,1,Value}};
+%%
+%%                        _ -> io:format("reassign-~n"),{true, {atom,1,Var}}
+%%                    end
+%%            end;
+%%            (Elem) -> {true, Elem}
+%%        end, Tokens),
+%%    NewTokens.
+
 lost_multiplication([]) -> [];
 
 lost_multiplication([Token]) -> [Token];
@@ -274,17 +311,16 @@ get_type([{atom, 1, Name1}, {'=', 1}, {atom, 1, Name2}], Map) ->
         _ -> error
     end;
 
-get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]] = Token, Map) ->
+get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]]]]], Map) ->
     Tokens0 = lost_multiplication(Expr) ++ [{dot, 1}],
     Tokens1 = reassign_tokens(Tokens0, Map),
-%%    io:format("TokensForFun: ~p~n", [Tokens1]),
-    case lists:member({'^', 1}, Tokens1) of
-        true ->
-%%            io:format("Tokens1: ~p~n", [Tokens1]),
+    try
+%%    case lists:member({'^', 1}, Tokens1) of
+%%        true ->
             case quadratic_equations:reduse_form_of_polinom(Tokens1, Var) of
                 {error, Reason} ->
                     Tokens2 = reassign_tokens(Tokens1, #{Var => [{type, variable}, {value, 1}]}),
-                    io:format("Tokens1: ~p~nTokens2: ~p~n", [Tokens1,Tokens2]),
+%%                    io:format("Tokens1: ~p~nTokens2: ~p~n", [Tokens1,Tokens2]),
                     V = get_type([{atom,1,Name} | [{'=',1} | lists:droplast(Tokens2)]], #{}),
                     case V of
                         {variable,_,_} -> {function, {Name, Var}, Tokens1};
@@ -293,12 +329,14 @@ get_type([{atom,1,Name} | [{'(',1} | [{atom,1,Var} | [{')',1} | [{'=',1} | Expr]
                 Val ->
                     io:format("Val: ~p~n", [Val]),
                     {polinomial_function, {Name, Var}, Val}
-            end;
-        _ ->
+            end
+        catch
+                    _:_ ->
+%%                        _ ->
             case erl_parse:parse_exprs(Tokens1) of
                 {ok,[Abs]} ->
                     case quadratic_equations:reduse_form(Abs) of
-                        {ok, Value} -> {linear_function, {Name, Var}, Tokens1};
+                        {ok, _Value} -> {linear_function, {Name, Var}, Tokens1};
                         E -> E
                     end;
                 _ -> error
@@ -368,10 +406,10 @@ get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
             _:_ ->
                 case lists:keyfind(atom, 1, Tokens) of
                     {atom, 1, i} -> {complex, Name, AbsForm};
-                    {atom, 1, Fun} = Res ->
+                    {atom, 1, Fun} ->
 %%                        io:format("Fun:~p reassign1: ~p~nAbsForm~p~nTokens: ~p~n", [Fun, Res, AbsForm, Tokens]),
                         case get_var_by_name(Fun, Map) of
-                            {{N, Var}, [Type, {value,Val}]} ->
+                            {{_N, _Var}, [_Type, {value,_Val}]} ->
                                 Tokens2 = reassign_func(Tokens, Map),
                                 {ok, Abs} = erl_parse:parse_exprs(Tokens2),
 %%                                io:format("Abs: ~p~n"Tail:, [Abs]),
@@ -386,7 +424,7 @@ get_type([{atom,1,Name} | [{'=',1} | Expr]], Map) ->
         end
     catch
         _:_ ->
-            io:format("222get_type!!!!!!~n"),
+%%            io:format("222get_type!!!!!!~n"),
             case lists:keyfind(atom, 1, Tokens1) of
                 {atom, 1, _} -> {reassign2, Name, Tokens1};
                 _ -> {expression2, Name, Tokens1}
@@ -436,7 +474,7 @@ print_variable(_, [{type, function},{value, Token}]) ->
 print_variable({_, Var}, [{type, polinomial_function},{value, TupleList}]) ->
     [{MaxDegree, _}|_] =  TupleList,
     lists:foreach(
-        fun({_, 0}) -> ok;
+        fun({_, 0}) -> io:format("0 ", []);
             ({Degree, 1}) when Degree == MaxDegree -> io:format("~p^~p ", [Var, MaxDegree]);
             ({Degree, Coef}) when Coef > 0 andalso Degree == MaxDegree-> io:format("~p * ~p^~p ", [Coef, Var, MaxDegree]);
             ({0, Coef}) when Coef > 0 -> io:format("+ ~p ", [Coef]);
@@ -666,7 +704,8 @@ function_test_() ->
         {funG,y} => [{type,function},{value,[{integer,1,3},{'/',1},{atom,1,y},{'^',1},{integer,1,1},{'+',1},{integer,1,0},{'+',1},{integer,1,7},
             {'-',1},{integer,1,8},{'+',1},{integer,1,3},{dot,1}]}]}),
     ?_assertEqual(Test2, #{
-        {funI,y} => [{type,function},{value,[{integer,1,3},{'/',1},{atom,1,y},{'+',1},{integer,1,2},{'^',1},{integer,1,1},{dot,1}]}]})].
+        {funI,y} => [{type,function},{value,[{integer,1,3},{'/',1},{atom,1,y},{'+',1},{integer,1,2},{'^',1},{integer,1,1},{dot,1}]}],
+        {funG,y} => [{type,polinomial_function},{value,[{0,0}]}]})].
 
 -endif.
 
@@ -691,24 +730,6 @@ var_equal_func_test_() ->
         varE => [{type,variable},{value,265.5}],
         varF => [{type,variable},{value,291.5}],
         varG => [{type,variable},{value,0.0}],
-        {funA,x} => [{type,linear_function},
-         {value,[{integer,1,1},
-                 {'*',1},
-                 {integer,1,27},
-                 {'+',1},
-                 {integer,1,1},
-                 {'*',1},
-                 {integer,1,53},
-                 {'*',1},
-                 {integer,1,4},
-                 {'-',1},
-                 {integer,1,1},
-                 {'/',1},
-                 {integer,1,2},
-                 {'+',1},
-                 {integer,1,1},
-                 {'*',1},
-                 {atom,1,x},
-                 {dot,1}]}]})].
+        {funA,x} => [{type,polinomial_function},{value,[{1,1},{0,238.5}]}]})].
 
 %%  rp(eunit:test(computor)).

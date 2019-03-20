@@ -1,7 +1,25 @@
+dump
+print
+clean
+----------------------------
 доделать pow(x,y)
 eunit test для функции
 доставать переменную по имени
-funB(x) = funA(x)
+
+
+1.
+> funB(x) = 4 -5 + (x + 2)^2 - 4
+
+2.
+> funA(x) = x^2 + 2x + 1
+y = 0
+funA(x) = y ?
+
+5 bonus
+funA(x) = 2*x+1
+funB(x) = 2 * x+1
+funA(funB(x)) = ?
+
 ---------unB(x) = funA(x)----
 2 часть
 -------------
@@ -38,4 +56,11 @@ funcJ(y) = funcF(x)
 varA = 2 + 4 *2 - 5 %4 + 2 * (4 + 5)	27
 varB = 2 * varA - 5 %4			53
 +funA(x) = varA + varB * 4 - 1 / 2 + x	238.5 + x
+
+funcF(x) = funA(x)
+
+
+funB(x) = 4 -5 + (x + 2)^2 - 4
+
+
 

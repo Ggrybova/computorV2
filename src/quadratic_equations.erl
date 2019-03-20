@@ -12,7 +12,8 @@
 -export([
     main/1,
     reduse_form/1,
-    reduse_form_of_polinom/2
+    reduse_form_of_polinom/2,
+    solve_equation/1
 ]).
 %%====================================================================
 %% API
@@ -97,7 +98,7 @@ reduse_form_of_polinom(H0, [{Op, 1}|T], Acc, Var) when (Op == '+' orelse Op == '
 %%            io:format("Op: ~p~n", [Op]),
             reduse_form_of_polinom([{Op, 1}], T, NewAcc, Var);
         _ ->
-            {error, "Not valid polinomial!"}
+            {error, "1Not valid polinomial!"}
     end;
 
 reduse_form_of_polinom(H0, [H|T], Acc, Name) -> reduse_form_of_polinom([H|H0], T, Acc, Name).
@@ -113,7 +114,7 @@ get_monomial(List) ->
             [{atom,1,V}|T] -> {1, V, T};
             T2 -> {0, undefined, T2}
         end,
-    io:format("Part01: ~p~n", [Part01]),
+%%    io:format("Part01: ~p~n", [Part01]),
     Part1 =
         case Part2 of
             [] when Var =/= undefined ->
@@ -123,13 +124,13 @@ get_monomial(List) ->
                 end;
             _ -> Part01
         end,
-    io:format("Part1: ~p~n", [Part1]),
+%%    io:format("Part1: ~p~n", [Part1]),
     Val = Part1 ++ Part2 ++ [{dot,1}],
     try
         {ok, AbsForm} = erl_parse:parse_exprs(Val),
         {value, Value, _Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
         {Value, Var, Degree}
-    catch _:_ -> {error, "Not valid polinomial!"}
+    catch _:_ -> {error, "2Not valid polinomial!"}
     end.
 
 %%====================================================================
@@ -152,18 +153,18 @@ get_equation(Arg) ->
     end.
 
 solve_equation(#{degree := -1}) ->
-    io:format("STEP 2. Solutions:       all the real numbers~n");
+    io:format("Solutions:       all the real numbers~n");
 solve_equation(#{degree := 0, c := 0}) ->
-    io:format("STEP 2. Solutions:       all the real numbers~n");
+    io:format("Solutions:       all the real numbers~n");
 solve_equation(#{degree := 0}) ->
-    io:format("STEP 2. The solution:    no solutions~n");
+    io:format("The solution:    no solutions~n");
 solve_equation(#{degree := 1} = Map) ->
-    io:format("STEP 2. The solution:    - C / B = ~p~n", [maps:get(c, Map) * -1 / maps:get(b, Map)]);
-solve_equation(#{degree := 2, b := 0, c := 0}) -> io:format("STEP 2. The solution:    0~n");
+    io:format("The solution:    - C / B = ~p~n", [maps:get(c, Map) * -1 / maps:get(b, Map)]);
+solve_equation(#{degree := 2, b := 0, c := 0}) -> io:format("The solution:    0~n");
 solve_equation(#{degree := 2, a := A, b := B, c := C} = Map) ->
     D = B*B-4*A*C,
     Map2 = Map#{d => D},
-    io:format("STEP 2. Discriminant:    D = ~p~nSTEP 3. ", [maps:get(d, Map2)]),
+    io:format("Discriminant:    D = ~p~n", [maps:get(d, Map2)]),
     case D of
         D when D < 0 -> complex_solve(A, B, D);
         D when D == 0 -> io:format("The solution:   - B / 2A = ~p~n", [-1*B/2/A]);
@@ -180,9 +181,9 @@ complex_solve(A, B, D) ->
     Im = SqD/2/A,
     case -1*B/2/A of
         Re when Re == 0 orelse Re == 0.0 ->
-            io:format("STEP 3. Solutions:   -~pi,   ~pi~n", [Im, Im]);
+            io:format("Solutions:   -~pi,   ~pi~n", [Im, Im]);
         Re ->
-            io:format("STEP 3. Solutions:   ~p - ~pi,    ~p + ~pi~n", [Re, Im, Re, Im])
+            io:format("Solutions:   ~p - ~pi,    ~p + ~pi~n", [Re, Im, Re, Im])
     end.
 
 fill_map([], [], Acc) ->
